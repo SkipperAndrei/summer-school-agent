@@ -178,13 +178,26 @@ class AssistantTools:
         type = type.strip().lower() if type else None
 
         for ex in exercises:
-            if target_muscle and ex.get("bodypart") != target_muscle:
+            ex_bodypart = (ex.get("bodypart") or "").strip().lower()
+            ex_level = (ex.get("level") or "").strip().lower()
+            ex_equipment = ex.get("equipment")
+            ex_equipment = (ex_equipment or "").strip().lower() if isinstance(ex_equipment, str) else [
+                e.strip().lower() for e in (ex_equipment or [])
+            ]
+            ex_type = (ex.get("type") or "").strip().lower()
+
+            if target_muscle and target_muscle not in ex_bodypart and ex_bodypart not in target_muscle:
                 continue
-            if level and ex.get("level") != level:
+            if level and level != ex_level:
                 continue
-            if equipment and ex.get("equipment") not in equipment:
-                continue
-            if type and ex.get("type") != type:
+            if equipment:
+                if isinstance(ex_equipment, list):
+                    if not any(e in equipment for e in ex_equipment):
+                        continue
+                else:
+                    if not any(e in ex_equipment or ex_equipment in e for e in equipment):
+                        continue
+            if type and type not in ex_type and ex_type not in type:
                 continue
 
             matches.append(ex)
