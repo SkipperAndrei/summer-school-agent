@@ -145,7 +145,7 @@ class AssistantTools:
             try:
                 raw_md_content = self.read_document("exercises.md")
                 
-                clean_csv_str = raw_md_content.strip()
+                clean_csv_str = raw_md_content.get("content").strip()
                 if clean_csv_str.startswith("```"):
                     lines = clean_csv_str.splitlines()
                     clean_csv_str = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
@@ -186,8 +186,8 @@ class AssistantTools:
                 continue
             if type and ex.get("type") != type:
                 continue
-            matches.append(ex)
 
+            matches.append(ex)
 
             if len(matches) >= max_matches:
                 break
