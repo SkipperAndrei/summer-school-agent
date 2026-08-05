@@ -5,8 +5,13 @@ The tools currently access a local Markdown knowledge base.
 Later, the same operations will use Google Cloud Storage.
 """
 
+import csv
+import io
+from typing import Dict, List, Optional
+
 from app.knowledge import KnowledgeProvider
 
+_CACHED_EXERCISES: Optional[List[Dict[str, str]]] = None
 
 class AssistantTools:
     """Operations that the AI agent can perform on the knowledge base."""
@@ -113,4 +118,103 @@ class AssistantTools:
             "keyword": keyword,
             "matches": matches,
             "match_count": len(matches),
+        }
+
+    def filter_results(self, target_muscle: Optional[str] = None, 
+                       level: Optional[str] = None, 
+                       equipment: Optional[List[str]] = None, 
+                       type: Optional[str] = None,
+                       max_matches: int = 8) -> dict:
+        """
+        Filter exercises from the knowledge base based on specified criteria.
+        This tool should be used when the user asks for alternatives or specific exercises based on available equipment, target muscle, level, or type.
+
+        Args:
+            target_muscle: The muscle group to target (e.g., "chest", "legs").
+            level: The difficulty level of the exercise (e.g., "beginner", "intermediate", "advanced").
+            equipment: A list of available equipment (e.g., ["dumbbell", "kettlebells"]).
+            type: The type of exercise (e.g., "strength", "powerlifting").
+            max_matches: Maximum number of exercises to return.
+
+        Returns:
+            A dictionary containing the filtered exercises or an error message.
+        """
+        global _CACHED_EXERCISES
+
+        if _CACHED_EXERCISES is None:
+            try:
+                raw_md_content = self.read_document("exercises.md")
+                
+                clean_csv_str = raw_md_content.get("content").strip()
+                if clean_csv_str.startswith("```"):
+                    lines = clean_csv_str.splitlines()
+                    clean_csv_str = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+                csv_file = io.StringIO(clean_csv_str.strip())
+                reader = csv.DictReader(csv_file)
+                
+                parsed_rows = []
+                for row in reader:
+                    normalized_row = {
+                        k.strip().lower().replace(" ", "_"): v.strip() 
+                        for k, v in row.items() if k
+                    }
+                    parsed_rows.append(normalized_row)
+                    
+                _CACHED_EXERCISES = parsed_rows
+                
+            except Exception as e:
+                return {
+                        "status": "error", 
+                        "message": f"Failed to parse exercises.md: {str(e)}"
+                }
+
+        exercises = _CACHED_EXERCISES
+        matches = []
+
+        target_muscle = target_muscle.strip().lower() if target_muscle else None
+        level = level.strip().lower() if level else None
+        equipment = [e.strip().lower() for e in equipment] if equipment else None
+        type = type.strip().lower() if type else None
+
+        for ex in exercises:
+            ex_bodypart = (ex.get("bodypart") or "").strip().lower()
+            ex_level = (ex.get("level") or "").strip().lower()
+            ex_equipment = ex.get("equipment")
+            ex_equipment = (ex_equipment or "").strip().lower() if isinstance(ex_equipment, str) else [
+                e.strip().lower() for e in (ex_equipment or [])
+            ]
+            ex_type = (ex.get("type") or "").strip().lower()
+
+            if target_muscle and target_muscle not in ex_bodypart and ex_bodypart not in target_muscle:
+                continue
+            if level and level != ex_level:
+                continue
+            if equipment:
+                if isinstance(ex_equipment, list):
+                    if not any(e in equipment for e in ex_equipment):
+                        continue
+                else:
+                    if not any(e in ex_equipment or ex_equipment in e for e in equipment):
+                        continue
+            if type and type not in ex_type and ex_type not in type:
+                continue
+
+            matches.append(ex)
+
+            if len(matches) >= max_matches:
+                break
+
+        if not matches:
+            return {
+                "status": "success",
+                "message": "No exercises found matching the criteria.",
+                "matches": [],
+            }
+
+        return {
+            "status": "success",
+            "message": "Here are some exercises matching the criteria",
+            "nr_matches": len(matches),
+            "matches": matches
         }
